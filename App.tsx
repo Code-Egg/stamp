@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { evaluateBehavior } from './services/geminiService';
 import { Stamp } from './components/Stamp';
 import { CelebrationModal } from './components/CelebrationModal';
 import { ProfileSelector } from './components/ProfileSelector';
@@ -13,6 +12,10 @@ const INITIAL_TARGET = 10;
 // Helper to generate IDs
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
+// Fun defaults since we removed AI
+const PRAISES = ["Great job!", "Awesome!", "Way to go!", "Superb!", "Nice work!", "Keep it up!", "Fantastic!", "You rock!"];
+const EMOJIS = ["⭐", "🌟", "🎉", "🎈", "🥰", "👍", "🎖️", "🦄", "🚀", "🎨", "🍦", "🍭", "🐞", "🦕"];
+
 const App: React.FC = () => {
   // State for multiple profiles
   const [profiles, setProfiles] = useState<KidProfile[]>([]);
@@ -21,9 +24,8 @@ const App: React.FC = () => {
 
   // UI State
   const [behaviorInput, setBehaviorInput] = useState('');
-  const [isProcessing, setIsProcessing] = useState(false);
   const [showCelebration, setShowCelebration] = useState(false);
-  const [errorMsg, setErrorMsg] = useState('');
+  const [notification, setNotification] = useState('');
 
   // 1. Initialize & Migrate Data
   useEffect(() => {
@@ -53,8 +55,6 @@ const App: React.FC = () => {
         };
         setProfiles([newProfile]);
         setActiveProfileId(newProfile.id);
-        // Clear old key to prevent re-migration issues in future (optional, but good hygiene)
-        // localStorage.removeItem(STORAGE_KEY_V1); 
         return;
       } catch (e) {
         console.error("Failed to migrate V1 data", e);
@@ -94,66 +94,41 @@ const App: React.FC = () => {
   }, [activeProfile?.totalStamps, activeProfile?.targetStamps]);
 
   // Handlers
-  const handleAddStamp = async (e: React.FormEvent) => {
+  const handleAddStamp = (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeProfile) return;
 
     if (activeProfile.totalStamps >= activeProfile.targetStamps) {
-      setErrorMsg("Card is full! Reset to start a new one.");
+      setNotification("Card is full! Reset to start a new one.");
+      setTimeout(() => setNotification(''), 3000);
       return;
     }
 
-    setIsProcessing(true);
-    setErrorMsg('');
+    // Create new stamp with fun random details
+    const randomPraise = PRAISES[Math.floor(Math.random() * PRAISES.length)];
+    const randomEmoji = EMOJIS[Math.floor(Math.random() * EMOJIS.length)];
+    
+    const newStamp: StampData = {
+      id: Date.now().toString(),
+      timestamp: Date.now(),
+      behavior: behaviorInput.trim() || "Good Behavior!",
+      praise: randomPraise,
+      emoji: randomEmoji
+    };
 
-    try {
-      let newStamp: StampData;
-      
-      // If input is empty -> Quick Stamp (Manual)
-      if (!behaviorInput.trim()) {
-        newStamp = {
-          id: Date.now().toString(),
-          timestamp: Date.now(),
-          behavior: "Good Behavior!",
-          praise: "Great job!",
-          emoji: "⭐"
-        };
-      } else {
-        // If input has text -> AI Judge
-        const aiResult = await evaluateBehavior(behaviorInput, activeProfile.name);
-        if (!aiResult.approved) {
-           setErrorMsg("That behavior didn't quite earn a stamp, but keep trying!");
-           setIsProcessing(false);
-           return;
-        }
-        newStamp = {
-          id: Date.now().toString(),
-          timestamp: Date.now(),
-          behavior: behaviorInput,
-          praise: aiResult.praise,
-          emoji: aiResult.emoji
+    // Update State
+    setProfiles(prev => prev.map(p => {
+      if (p.id === activeProfile.id) {
+        return {
+          ...p,
+          totalStamps: p.totalStamps + 1,
+          history: [...p.history, newStamp]
         };
       }
-
-      // Update State
-      setProfiles(prev => prev.map(p => {
-        if (p.id === activeProfile.id) {
-          return {
-            ...p,
-            totalStamps: p.totalStamps + 1,
-            history: [...p.history, newStamp]
-          };
-        }
-        return p;
-      }));
-      
-      setBehaviorInput('');
-
-    } catch (err) {
-      setErrorMsg("Something went wrong processing the stamp.");
-    } finally {
-      setIsProcessing(false);
-    }
+      return p;
+    }));
+    
+    setBehaviorInput('');
   };
 
   const handleReset = () => {
@@ -271,49 +246,23 @@ const App: React.FC = () => {
                  type="text" 
                  value={behaviorInput}
                  onChange={(e) => setBehaviorInput(e.target.value)}
-                 disabled={isProcessing}
-                 placeholder="Type behavior OR just tap add..."
-                 className="flex-1 bg-white text-slate-800 placeholder:text-slate-400 rounded-xl px-5 py-4 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 text-lg transition shadow-sm disabled:opacity-70"
+                 placeholder="Reason (Optional)"
+                 className="flex-1 bg-white text-slate-800 placeholder:text-slate-400 rounded-xl px-5 py-4 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 text-lg transition shadow-sm"
                />
                <button 
                  type="submit"
-                 disabled={isProcessing}
-                 className={`
-                   px-6 py-4 rounded-xl font-bold text-white shadow-md text-lg transition-all
-                   ${isProcessing ? 'bg-slate-300 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700 active:scale-95'}
-                   flex items-center justify-center gap-2 min-w-[140px]
-                 `}
+                 className="px-6 py-4 rounded-xl font-bold text-white shadow-md text-lg transition-all bg-indigo-600 hover:bg-indigo-700 active:scale-95 flex items-center justify-center gap-2 min-w-[140px]"
                >
-                 {isProcessing ? (
-                   <>
-                     <svg className="animate-spin h-5 w-5 text-white" viewBox="0 0 24 24">
-                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                     </svg>
-                   </>
-                 ) : (
-                   <>
-                     {behaviorInput.trim() ? (
-                        <>
-                          <span>Judge It</span>
-                          <span className="text-xl">⚖️</span>
-                        </>
-                     ) : (
-                        <>
-                          <span>Add Stamp</span>
-                          <span className="text-xl">✨</span>
-                        </>
-                     )}
-                   </>
-                 )}
+                  <span>Add Stamp</span>
+                  <span className="text-xl">✨</span>
                </button>
              </form>
              
-             {/* Error / Feedback Message */}
-             {errorMsg && (
+             {/* Notification Message */}
+             {notification && (
                 <div className="absolute top-full mt-2 left-0 right-0 text-center">
                   <span className="text-red-500 text-sm font-medium bg-red-50 px-3 py-1 rounded-full border border-red-100 animate-pulse">
-                    {errorMsg}
+                    {notification}
                   </span>
                 </div>
              )}
